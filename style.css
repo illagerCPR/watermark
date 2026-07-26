@@ -65,6 +65,39 @@ button.primary:disabled {
   cursor: not-allowed;
 }
 
+.topbar-actions {
+  display: flex;
+  gap: 10px;
+}
+
+button.ghost {
+  background: none;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+button.ghost:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
+button.ghost:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  margin: -6px 0 14px;
+}
+
 /* 主布局 */
 .layout {
   flex: 1;
@@ -176,6 +209,7 @@ button.primary:disabled {
 
 textarea,
 select,
+input[type="text"],
 input[type="number"] {
   width: 100%;
   background: var(--field);
@@ -189,6 +223,7 @@ input[type="number"] {
 
 textarea:focus,
 select:focus,
+input[type="text"]:focus,
 input[type="number"]:focus {
   outline: none;
   border-color: var(--accent);
@@ -214,6 +249,51 @@ input[type="checkbox"] {
   height: 16px;
   accent-color: var(--accent);
   cursor: pointer;
+}
+
+/* 提取结果浮层 */
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+/* hidden 属性的 display:none 会被上方 flex 覆盖，需显式补回 */
+.modal[hidden] {
+  display: none;
+}
+
+.modal-box {
+  width: 360px;
+  max-width: calc(100vw - 40px);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.modal-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.modal-box .hint {
+  margin: 0 0 10px;
+}
+
+.modal-box textarea {
+  margin-bottom: 12px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 /* 窄屏适配：面板移到底部 */
