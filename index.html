@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>图片平铺水印制作工具</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>图片平铺水印制作工具</h1>
+    <button id="downloadBtn" class="primary" disabled>下载图片</button>
+  </header>
+
+  <main class="layout">
+    <section id="previewArea" class="preview" title="点击更换图片">
+      <div id="dropZone" class="dropzone">
+        <svg class="dz-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+          <circle cx="8.5" cy="8.5" r="1.5"/>
+          <path d="M21 15l-5-5L5 21"/>
+        </svg>
+        <p class="dz-main">点击选择图片，或将图片拖拽到此处</p>
+        <p class="dz-hint">支持 JPG / PNG / WebP，所有处理均在本地完成，不会上传服务器</p>
+      </div>
+      <canvas id="canvas" hidden></canvas>
+      <input type="file" id="fileInput" accept="image/*" hidden>
+    </section>
+
+    <aside class="panel">
+      <div class="group">
+        <label class="group-title" for="textInput">水印文本（支持多行）</label>
+        <textarea id="textInput" rows="3" spellcheck="false">仅供内部使用
+CONFIDENTIAL</textarea>
+      </div>
+
+      <div class="group">
+        <label class="group-title" for="fontSelect">文本字体</label>
+        <select id="fontSelect">
+          <option value="Microsoft YaHei" selected>微软雅黑</option>
+          <option value="SimSun">宋体</option>
+          <option value="SimHei">黑体</option>
+          <option value="KaiTi">楷体</option>
+          <option value="FangSong">仿宋</option>
+          <option value="Arial">Arial</option>
+          <option value="Times New Roman">Times New Roman</option>
+          <option value="Courier New">Courier New</option>
+          <option value="Georgia">Georgia</option>
+          <option value="Impact">Impact</option>
+        </select>
+      </div>
+
+      <div class="group row">
+        <label for="fontSize">字体大小</label>
+        <input type="range" id="fontSize" min="12" max="200" step="1" value="36">
+        <input type="number" id="fontSizeNum" min="12" max="200" step="1" value="36">
+      </div>
+
+      <div class="group row">
+        <label for="boldInput">加粗</label>
+        <input type="checkbox" id="boldInput">
+      </div>
+
+      <div class="group row">
+        <label for="colorInput">文本颜色</label>
+        <input type="color" id="colorInput" value="#888888">
+      </div>
+
+      <div class="group row">
+        <label for="strokeColorInput">描边颜色</label>
+        <input type="color" id="strokeColorInput" value="#000000">
+      </div>
+
+      <div class="group row">
+        <label for="strokeWidth">描边宽度</label>
+        <input type="range" id="strokeWidth" min="0" max="10" step="0.5" value="0">
+        <input type="number" id="strokeWidthNum" min="0" max="10" step="0.5" value="0">
+      </div>
+
+      <div class="group row">
+        <label for="opacity">透明度</label>
+        <input type="range" id="opacity" min="0.05" max="1" step="0.05" value="0.3">
+        <input type="number" id="opacityNum" min="0.05" max="1" step="0.05" value="0.3">
+      </div>
+
+      <div class="group row">
+        <label for="angle">旋转角度</label>
+        <input type="range" id="angle" min="-90" max="90" step="1" value="-30">
+        <input type="number" id="angleNum" min="-90" max="90" step="1" value="-30">
+      </div>
+
+      <div class="group row">
+        <label for="gapX">水平间距</label>
+        <input type="range" id="gapX" min="0" max="400" step="5" value="80">
+        <input type="number" id="gapXNum" min="0" max="400" step="5" value="80">
+      </div>
+
+      <div class="group row">
+        <label for="gapY">垂直间距</label>
+        <input type="range" id="gapY" min="0" max="400" step="5" value="60">
+        <input type="number" id="gapYNum" min="0" max="400" step="5" value="60">
+      </div>
+
+      <div class="group row">
+        <label for="formatSelect">导出格式</label>
+        <select id="formatSelect">
+          <option value="png" selected>PNG（无损）</option>
+          <option value="jpeg">JPEG</option>
+        </select>
+      </div>
+
+      <div class="group row" id="qualityGroup" hidden>
+        <label for="quality">JPEG 质量</label>
+        <input type="range" id="quality" min="0.6" max="1" step="0.02" value="0.92">
+        <input type="number" id="qualityNum" min="0.6" max="1" step="0.02" value="0.92">
+      </div>
+    </aside>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
