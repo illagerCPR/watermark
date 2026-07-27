@@ -10,6 +10,7 @@
 - **批量处理**：`batchFiles[]` 维护文件列表，`renderThumbs()` 渲染缩略图网格（含单张删除）。`processBatch(files)` 串行：每张图 `renderToCanvas` -> 可选盲水印嵌入 -> `toBlob` -> `saveBlob`。进度显示在 `#batchExportBtn` 文字。
 - **平铺水印开关**：`state.tiledEnabled`（默认 true）。`renderToCanvas` 开头判断，未勾选则只 `drawImage` 原图、跳过 pattern 叠加。盲水印不受此开关影响。
 - 盲水印逻辑在 `blind.js`（IIFE -> `window.BlindWatermark`），含手写 radix-2 FFT + 比特编解码 + 嵌入/提取。嵌入在单图下载与批量导出两处触达，完全不动 `renderToCanvas`。
+- **盲水印尺寸门槛**：`BLIND_MIN_SIZE = 256`（`script.js`）。嵌入端（单图下载 + 批量导出）与提取端均在调用 `BlindWatermark` 前拦截任一边 < 256 的图片：单图弹 alert 不开始；批量 `continue` 跳过并计入 `skippedSmall`，最终 alert 体现；提取端直接把状态文案改为"尺寸过小"不进入算法。可见水印不受此门槛影响。
 - UI 文案为简体中文，深色主题；保持这一风格。
 
 ## 盲水印架构（v2 瓦片架构，容易踩坑）
@@ -22,7 +23,7 @@
 - **提取解码**：两级网格（B/2 粗 → B/4 细）逐窗 FFT → 先 `findConstellation`（差分模板评分：on 与 22.5° off 幅度差中位数，内容邻近频点相关被抵消）找候选解码；失败走 `decodeBlockRot`（`estimateRotation` 径向能量角度直方图估 θ + `estimateScaleR` 定 θ 扫半径估 s，**纯频域校正**，tryDecode 内置坐标变换直接采样，无第二次像素插值）。
 - **表决**：`(m1-m2)/(m1+m2+1)` 归一化累加——内容弱的位置信号纯净（票≈±1），内容强的位置被分母自动抑制。**不要用符号投票或线性和**（前者把强信号与噪声等权，后者被单点强内容峰淹没）。
 - **门控**：魔数**软门控**（汉明距 ≤1，魔数不参与 CRC 故容错安全）+ CRC8 硬裁决 + **2 块一致采信**（无 firstFound 兜底——单块 CRC 侥幸通过的误码必须被挡，宁可漏检不可误检）。RED_HEADER=12，payload 冗余 `redundancyFor` 自适应（3–8）。
-- **已知边界**：任意角度旋转/缩放依赖插值后幸存的频谱峰，在内容方向性强（大文字、规则纹理）的图上可能失败；sinc 插值损失不可逆，提高强度/冗余可缓解。小图（任一边 <256）退化 padding 单块，无几何鲁棒性。
+- **已知边界**：任意角度旋转/缩放依赖插值后幸存的频谱峰，在内容方向性强（大文字、规则纹理）的图上可能失败；sinc 插值损失不可逆，提高强度/冗余可缓解。任一边 <256 的图片在 UI 层即被拦截（`BLIND_MIN_SIZE`），不进入算法--因为 padding 单块模式无几何鲁棒性且在宽 ≥256 但高 <256 的混合尺寸下两端 padding 策略不一致会导致提取失败。
 
 ## 环境约束（重要）
 
@@ -43,4 +44,5 @@
 - **负样本**：对未嵌入图片做 `BlindWatermark.extract` 应返回 `null`（magic/CRC 门控生效）。
 - 文件选择器（file chooser）弹出后 eval 会阻塞，需用 `playwright-cli upload <path>` 命令将文件填入已打开的 chooser。
 - `hidden` 属性（`display: none`）会被 CSS `.class { display: flex }` 覆盖，需显式声明 `.class[hidden] { display: none }`。这是真实兼容性坑——已在 `style.css` 修复。
+- **flex column 子项需 `min-height: 0`**：`.preview`（`flex:1`）默认 `min-height: auto` 不收缩，大图 canvas（即使设了 `max-height:100%`）会撑开预览区把 `.view-actions`（含下载按钮）推出视口底部不可见。已加 `min-height: 0` 修复。
 - 验证完成后清理：关闭浏览器（`close`）、停掉 HTTP 服务器进程、删除测试产物（测试图片、服务器脚本、`.playwright-cli/` 目录）。

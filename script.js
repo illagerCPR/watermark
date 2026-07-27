@@ -51,6 +51,8 @@
 
   var busy = false; // 嵌入/提取进行中，防止重入
 
+  var BLIND_MIN_SIZE = 256; // 盲水印要求图片任一边不小于此值（瓦片周期要求）
+
   var img = null;            // 已加载的图片
   var originalName = 'image'; // 原文件名（导出时拼接后缀）
   var batchFiles = [];       // 批量处理待处理文件列表
@@ -214,6 +216,10 @@
     }
 
     // 启用盲水印：在最终像素（含可见水印）上嵌入频域水印，强制 PNG
+    if (img.naturalWidth < BLIND_MIN_SIZE || img.naturalHeight < BLIND_MIN_SIZE) {
+      alert('图片尺寸过小（任一边小于 ' + BLIND_MIN_SIZE + ' 像素），盲水印不支持。');
+      return;
+    }
     setBusy(true, '嵌入中 0%');
     var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     BlindWatermark.embed(imageData, state.blindText.trim(), state.blindStrength, function (p) {
@@ -339,12 +345,20 @@
     var mime = useBlind ? 'image/png' : (state.format === 'jpeg' ? 'image/jpeg' : 'image/png');
     var ext = useBlind ? 'png' : (state.format === 'jpeg' ? 'jpg' : 'png');
     var okCount = 0;
+    var skippedSmall = 0;
 
     for (var i = 0; i < files.length; i++) {
       var file = files[i];
       batchExportBtn.textContent = '批量 ' + (i + 1) + '/' + files.length;
       try {
         var image = await loadImageFromFile(file);
+
+        if (useBlind && (image.naturalWidth < BLIND_MIN_SIZE || image.naturalHeight < BLIND_MIN_SIZE)) {
+          console.warn('跳过（尺寸过小）:', file.name, image.naturalWidth + 'x' + image.naturalHeight);
+          skippedSmall++;
+          continue;
+        }
+
         var tmpCanvas = document.createElement('canvas');
         var tmpCtx = tmpCanvas.getContext('2d');
         renderToCanvas(tmpCtx, image);
@@ -368,7 +382,9 @@
 
     setBusy(false);
     batchExportBtn.textContent = '批量导出';
-    alert('批量完成：' + okCount + '/' + files.length + ' 张成功');
+    var msg = '批量完成：' + okCount + '/' + files.length + ' 张成功';
+    if (skippedSmall > 0) msg += '，' + skippedSmall + ' 张尺寸过小已跳过';
+    alert(msg);
   }
 
   // ---------- 控件绑定 ----------
@@ -495,6 +511,11 @@
     var image = new Image();
     image.onload = function () {
       URL.revokeObjectURL(url);
+      if (image.naturalWidth < BLIND_MIN_SIZE || image.naturalHeight < BLIND_MIN_SIZE) {
+        setBusy(false);
+        extractStatus.textContent = '图片尺寸过小（任一边小于 ' + BLIND_MIN_SIZE + ' 像素），无法提取盲水印';
+        return;
+      }
       var probe = document.createElement('canvas');
       probe.width = image.naturalWidth;
       probe.height = image.naturalHeight;
