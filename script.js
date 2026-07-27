@@ -1,4 +1,4 @@
-/* 图片平铺水印制作工具 —— 纯前端本地实现 */
+/* 图片水印工具 —— 纯前端本地实现 */
 (function () {
   'use strict';
 
@@ -9,6 +9,15 @@
   var canvas = document.getElementById('canvas');
   var downloadBtn = document.getElementById('downloadBtn');
   var extractBtn = document.getElementById('extractBtn');
+  var tabSingle = document.getElementById('tabSingle');
+  var tabBatch = document.getElementById('tabBatch');
+  var singleView = document.getElementById('singleView');
+  var batchView = document.getElementById('batchView');
+  var batchArea = document.getElementById('batchArea');
+  var batchDropZone = document.getElementById('batchDropZone');
+  var thumbGrid = document.getElementById('thumbGrid');
+  var batchInput = document.getElementById('batchInput');
+  var batchExportBtn = document.getElementById('batchExportBtn');
   var extractInput = document.getElementById('extractInput');
   var extractModal = document.getElementById('extractModal');
   var extractStatus = document.getElementById('extractStatus');
@@ -30,6 +39,7 @@
     strokeWidth: 0,
     opacity: 0.3,
     angle: -30,
+    tiledEnabled: true,
     gapX: 80,
     gapY: 60,
     blindEnabled: false,
@@ -43,16 +53,19 @@
 
   var img = null;            // 已加载的图片
   var originalName = 'image'; // 原文件名（导出时拼接后缀）
+  var batchFiles = [];       // 批量处理待处理文件列表
 
   // ---------- 核心渲染 ----------
-  function render() {
-    if (!img) return;
+  // 将水印渲染到任意 ctx（单图预览与批量共用）
+  function renderToCanvas(targetCtx, image) {
+    var w = image.naturalWidth, h = image.naturalHeight;
+    targetCtx.canvas.width = w;
+    targetCtx.canvas.height = h;
+    targetCtx.clearRect(0, 0, w, h);
+    targetCtx.drawImage(image, 0, 0);
 
-    // 主画布保持图片原始分辨率，预览缩放交给 CSS
-    canvas.width = img.naturalWidth;
-    canvas.height = img.naturalHeight;
-    ctx.drawImage(img, 0, 0);
-
+    // 未启用平铺水印或无文本：仅保留原图
+    if (!state.tiledEnabled) return;
     var text = state.text.replace(/\r/g, '');
     if (!text.trim()) return; // 无文本则不叠水印
 
@@ -92,16 +105,22 @@
     }
 
     // 以画布中心为原点旋转，填充足够大的矩形保证全图覆盖
-    var pattern = ctx.createPattern(patternCanvas, 'repeat');
-    var cx = canvas.width / 2;
-    var cy = canvas.height / 2;
-    var diag = Math.hypot(canvas.width, canvas.height);
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(state.angle * Math.PI / 180);
-    ctx.fillStyle = pattern;
-    ctx.fillRect(-diag, -diag, diag * 2, diag * 2);
-    ctx.restore();
+    var pattern = targetCtx.createPattern(patternCanvas, 'repeat');
+    var cx = w / 2;
+    var cy = h / 2;
+    var diag = Math.hypot(w, h);
+    targetCtx.save();
+    targetCtx.translate(cx, cy);
+    targetCtx.rotate(state.angle * Math.PI / 180);
+    targetCtx.fillStyle = pattern;
+    targetCtx.fillRect(-diag, -diag, diag * 2, diag * 2);
+    targetCtx.restore();
+  }
+
+  // 单图预览渲染（防抖）
+  function render() {
+    if (!img) return;
+    renderToCanvas(ctx, img);
   }
 
   // 防抖重绘，避免拖动滑块时频繁全量渲染
@@ -161,9 +180,9 @@
   });
 
   // ---------- 导出 ----------
-  function saveBlob(blob, ext) {
+  function saveBlob(blob, ext, name) {
     if (!blob) return;
-    var base = originalName.replace(/\.[^.]+$/, '');
+    var base = (name || originalName).replace(/\.[^.]+$/, '');
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = base + '_watermark.' + ext;
@@ -176,7 +195,10 @@
   function setBusy(flag, label) {
     busy = flag;
     downloadBtn.disabled = flag || !img;
+    batchExportBtn.disabled = flag || batchFiles.length === 0;
     extractBtn.disabled = flag;
+    tabSingle.disabled = flag;
+    tabBatch.disabled = flag;
     downloadBtn.textContent = label || '下载图片';
   }
 
@@ -210,6 +232,144 @@
       alert(err.message || '盲水印嵌入失败');
     });
   });
+
+  // ---------- Tab 切换 ----------
+  function switchTab(name) {
+    var isSingle = name === 'single';
+    tabSingle.classList.toggle('active', isSingle);
+    tabBatch.classList.toggle('active', !isSingle);
+    singleView.hidden = !isSingle;
+    batchView.hidden = isSingle;
+  }
+  tabSingle.addEventListener('click', function () { if (!busy) switchTab('single'); });
+  tabBatch.addEventListener('click', function () { if (!busy) switchTab('batch'); });
+
+  // ---------- 批量处理 ----------
+  batchDropZone.addEventListener('click', function () {
+    if (!busy) batchInput.click();
+  });
+
+  // 拖拽上传到批量区
+  ['dragenter', 'dragover'].forEach(function (evt) {
+    batchArea.addEventListener(evt, function (e) {
+      e.preventDefault();
+      batchArea.classList.add('dragover');
+    });
+  });
+  ['dragleave', 'drop'].forEach(function (evt) {
+    batchArea.addEventListener(evt, function (e) {
+      e.preventDefault();
+      batchArea.classList.remove('dragover');
+    });
+  });
+  batchArea.addEventListener('drop', function (e) {
+    if (busy) return;
+    var files = e.dataTransfer.files;
+    if (files && files.length) addBatchFiles(files);
+  });
+
+  batchInput.addEventListener('change', function () {
+    if (batchInput.files.length) addBatchFiles(batchInput.files);
+    batchInput.value = '';
+  });
+
+  function addBatchFiles(fileList) {
+    for (var i = 0; i < fileList.length; i++) {
+      var f = fileList[i];
+      if (f.type.indexOf('image/') === 0) batchFiles.push(f);
+    }
+    renderThumbs();
+  }
+
+  function renderThumbs() {
+    thumbGrid.innerHTML = '';
+    batchExportBtn.disabled = busy || batchFiles.length === 0;
+    for (var i = 0; i < batchFiles.length; i++) {
+      (function (idx, file) {
+        var card = document.createElement('div');
+        card.className = 'thumb';
+        var imgEl = document.createElement('img');
+        imgEl.src = URL.createObjectURL(file);
+        imgEl.alt = file.name;
+        var nameEl = document.createElement('div');
+        nameEl.className = 'thumb-name';
+        nameEl.textContent = file.name;
+        var del = document.createElement('button');
+        del.className = 'thumb-del';
+        del.textContent = '×';
+        del.title = '移除';
+        del.addEventListener('click', function (e) {
+          e.stopPropagation();
+          if (busy) return;
+          batchFiles.splice(idx, 1);
+          renderThumbs();
+        });
+        card.appendChild(imgEl);
+        card.appendChild(nameEl);
+        card.appendChild(del);
+        thumbGrid.appendChild(card);
+      })(i, batchFiles[i]);
+    }
+  }
+
+  function loadImageFromFile(file) {
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(file);
+      var image = new Image();
+      image.onload = function () { URL.revokeObjectURL(url); resolve(image); };
+      image.onerror = function () { URL.revokeObjectURL(url); reject(new Error('加载失败')); };
+      image.src = url;
+    });
+  }
+
+  function canvasToBlob(targetCanvas, mime, quality) {
+    return new Promise(function (resolve) {
+      targetCanvas.toBlob(resolve, mime, quality);
+    });
+  }
+
+  batchExportBtn.addEventListener('click', function () {
+    if (busy || batchFiles.length === 0) return;
+    processBatch(batchFiles.slice());
+  });
+
+  async function processBatch(files) {
+    setBusy(true);
+    var useBlind = state.blindEnabled && state.blindText.trim();
+    var mime = useBlind ? 'image/png' : (state.format === 'jpeg' ? 'image/jpeg' : 'image/png');
+    var ext = useBlind ? 'png' : (state.format === 'jpeg' ? 'jpg' : 'png');
+    var okCount = 0;
+
+    for (var i = 0; i < files.length; i++) {
+      var file = files[i];
+      batchExportBtn.textContent = '批量 ' + (i + 1) + '/' + files.length;
+      try {
+        var image = await loadImageFromFile(file);
+        var tmpCanvas = document.createElement('canvas');
+        var tmpCtx = tmpCanvas.getContext('2d');
+        renderToCanvas(tmpCtx, image);
+
+        if (useBlind) {
+          var imageData = tmpCtx.getImageData(0, 0, tmpCanvas.width, tmpCanvas.height);
+          batchExportBtn.textContent = '批量 ' + (i + 1) + '/' + files.length + ' 嵌入中';
+          var out = await BlindWatermark.embed(imageData, state.blindText.trim(), state.blindStrength);
+          tmpCanvas.width = out.width;
+          tmpCanvas.height = out.height;
+          tmpCtx.putImageData(out, 0, 0);
+        }
+
+        var blob = await canvasToBlob(tmpCanvas, mime, state.quality);
+        saveBlob(blob, ext, file.name);
+        okCount++;
+      } catch (err) {
+        console.error('批量处理失败:', file.name, err);
+      }
+    }
+
+    setBusy(false);
+    batchExportBtn.textContent = '批量导出';
+    alert('批量完成：' + okCount + '/' + files.length + ' 张成功');
+  }
 
   // ---------- 控件绑定 ----------
   function bindText(id, key) {
@@ -253,6 +413,7 @@
     num.addEventListener('change', function () { apply(num.value); });
   }
 
+  bindCheckbox('tiledEnabled', 'tiledEnabled');
   bindText('textInput', 'text');
   bindSelect('fontSelect', 'fontFamily');
   bindCheckbox('boldInput', 'bold');

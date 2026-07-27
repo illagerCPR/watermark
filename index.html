@@ -3,35 +3,69 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>图片平铺水印制作工具</title>
+  <title>图片水印工具</title>
+  <link rel="icon" href="favicon.ico">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="topbar">
-    <h1>图片平铺水印制作工具</h1>
+    <h1>图片水印工具</h1>
     <div class="topbar-actions">
       <button id="extractBtn" class="ghost">提取盲水印</button>
-      <button id="downloadBtn" class="primary" disabled>下载图片</button>
     </div>
   </header>
   <input type="file" id="extractInput" accept="image/*" hidden>
 
+  <nav class="tabs">
+    <button id="tabSingle" class="tab active">单图</button>
+    <button id="tabBatch" class="tab">批量</button>
+  </nav>
+
   <main class="layout">
-    <section id="previewArea" class="preview" title="点击更换图片">
-      <div id="dropZone" class="dropzone">
-        <svg class="dz-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <rect x="3" y="3" width="18" height="18" rx="2"/>
-          <circle cx="8.5" cy="8.5" r="1.5"/>
-          <path d="M21 15l-5-5L5 21"/>
-        </svg>
-        <p class="dz-main">点击选择图片，或将图片拖拽到此处</p>
-        <p class="dz-hint">支持 JPG / PNG / WebP，所有处理均在本地完成，不会上传服务器</p>
+    <section id="singleView" class="view">
+      <section id="previewArea" class="preview" title="点击更换图片">
+        <div id="dropZone" class="dropzone">
+          <svg class="dz-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <circle cx="8.5" cy="8.5" r="1.5"/>
+            <path d="M21 15l-5-5L5 21"/>
+          </svg>
+          <p class="dz-main">点击选择图片，或将图片拖拽到此处</p>
+          <p class="dz-hint">支持 JPG / PNG / WebP，所有处理均在本地完成，不会上传服务器</p>
+        </div>
+        <canvas id="canvas" hidden></canvas>
+        <input type="file" id="fileInput" accept="image/*" hidden>
+      </section>
+      <div class="view-actions">
+        <button id="downloadBtn" class="primary" disabled>下载图片</button>
       </div>
-      <canvas id="canvas" hidden></canvas>
-      <input type="file" id="fileInput" accept="image/*" hidden>
+    </section>
+
+    <section id="batchView" class="view" hidden>
+      <section id="batchArea" class="batch-area">
+        <div id="batchDropZone" class="dropzone batch-dropzone">
+          <svg class="dz-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <circle cx="8.5" cy="8.5" r="1.5"/>
+            <path d="M21 15l-5-5L5 21"/>
+          </svg>
+          <p class="dz-main">点击选择多张图片，或拖拽到此处</p>
+          <p class="dz-hint">支持 JPG / PNG / WebP，将按当前参数批量加水印并导出</p>
+        </div>
+        <div id="thumbGrid" class="thumb-grid"></div>
+        <input type="file" id="batchInput" accept="image/*" multiple hidden>
+      </section>
+      <div class="view-actions">
+        <button id="batchExportBtn" class="primary" disabled>批量导出</button>
+      </div>
     </section>
 
     <aside class="panel">
+      <div class="group row">
+        <label for="tiledEnabled">平铺水印</label>
+        <input type="checkbox" id="tiledEnabled" checked>
+      </div>
+
       <div class="group">
         <label class="group-title" for="textInput">水印文本（支持多行）</label>
         <textarea id="textInput" rows="3" spellcheck="false">仅供内部使用
