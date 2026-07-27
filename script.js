@@ -34,7 +34,7 @@
     gapY: 60,
     blindEnabled: false,
     blindText: '',
-    blindStrength: 2,
+    blindStrength: 1.5,
     format: 'png',
     quality: 0.92
   };

@@ -118,11 +118,11 @@ CONFIDENTIAL</textarea>
 
         <div class="group row">
           <label for="blindStrength">嵌入强度</label>
-          <input type="range" id="blindStrength" min="0.5" max="10" step="0.5" value="2">
-          <input type="number" id="blindStrengthNum" min="0.5" max="10" step="0.5" value="2">
+          <input type="range" id="blindStrength" min="0.5" max="10" step="0.5" value="1.5">
+          <input type="number" id="blindStrengthNum" min="0.5" max="10" step="0.5" value="1.5">
         </div>
 
-        <p class="hint">强度为空间域波纹幅度（灰度级），越大越鲁棒但越可能可见，建议 1.5–3。盲水印抗缩放与轻度压缩，不抗裁剪；同一张图请勿重复嵌入。</p>
+        <p class="hint">强度为空间域波纹幅度（灰度级），越大越鲁棒但越可能可见，建议 1.5–3。可抵抗旋转、缩放（0.7×–1.45×）、平移与裁剪（保留 ≥30%），图幅小于 256×256 时仅支持原图提取；同一张图请勿重复嵌入。</p>
       </div>
 
       <div class="group row">
