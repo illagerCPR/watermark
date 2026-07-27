@@ -444,7 +444,7 @@ input[type="checkbox"] {
   }
 
   .batch-area {
-    min-height: 45vh;
+    min-height: 0;
   }
 
   .panel {
