@@ -4,9 +4,12 @@
 
 ## 项目形态
 
-- 零依赖纯静态文件（`index.html` + `style.css` + `script.js` + `blind.js`），**没有也不应引入** npm、构建工具或框架；直接编辑文件，双击 `index.html` 即可运行。
-- 可见水印逻辑在 `script.js` 的 IIFE 闭包内：`state` 对象 + `render()`。水印渲染核心 = 离屏 pattern canvas → `ctx.createPattern` → 以画布中心旋转后填充对角线 2 倍的矩形。改渲染行为只需动 `render()`。
-- 盲水印逻辑在 `blind.js`（IIFE → `window.BlindWatermark`），含手写 radix-2 FFT + 比特编解码 + 嵌入/提取。嵌入仅在导出时触达（`script.js` 下载分支），完全不动 `render()`。
+- 零依赖纯静态文件（`index.html` + `style.css` + `script.js` + `blind.js` + `favicon.ico`），**没有也不应引入** npm、构建工具或框架；直接编辑文件，双击 `index.html` 即可运行。
+- 可见水印逻辑在 `script.js` 的 IIFE 闭包内：`state` 对象 + `renderToCanvas(targetCtx, image)`（核心渲染，单图预览与批量共用）。水印渲染核心 = 离屏 pattern canvas -> `ctx.createPattern` -> 以画布中心旋转后填充对角线 2 倍的矩形。`render()` 是单图预览的防抖包装（调 `renderToCanvas(ctx, img)`）。改渲染行为只需动 `renderToCanvas`。
+- **双 Tab 视图**：`switchTab(name)` 切换 `#singleView`/`#batchView` 显隐，参数面板 `<aside>` 两视图共享。`state` 变更后两视图都生效（批量用当前 `state` 串行处理）。
+- **批量处理**：`batchFiles[]` 维护文件列表，`renderThumbs()` 渲染缩略图网格（含单张删除）。`processBatch(files)` 串行：每张图 `renderToCanvas` -> 可选盲水印嵌入 -> `toBlob` -> `saveBlob`。进度显示在 `#batchExportBtn` 文字。
+- **平铺水印开关**：`state.tiledEnabled`（默认 true）。`renderToCanvas` 开头判断，未勾选则只 `drawImage` 原图、跳过 pattern 叠加。盲水印不受此开关影响。
+- 盲水印逻辑在 `blind.js`（IIFE -> `window.BlindWatermark`），含手写 radix-2 FFT + 比特编解码 + 嵌入/提取。嵌入在单图下载与批量导出两处触达，完全不动 `renderToCanvas`。
 - UI 文案为简体中文，深色主题；保持这一风格。
 
 ## 盲水印架构（v2 瓦片架构，容易踩坑）
