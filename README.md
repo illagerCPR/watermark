@@ -4,7 +4,8 @@
 
 ## 快速开始
 
-双击 `index.html` 即可在浏览器中打开使用，无需任何构建或安装步骤。
+- 双击 `index.html` 即可在浏览器中打开使用，无需任何构建或安装步骤。
+- 通过 GitHub Pages 直接使用：https://illagercpr.github.io/watermark/
 
 ## 功能特性
 
