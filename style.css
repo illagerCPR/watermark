@@ -163,16 +163,20 @@ button.ghost:disabled {
   min-width: 0;
   min-height: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
   padding: 20px;
   background: #17181c;
   cursor: pointer;
   transition: background 0.15s;
+  overflow-y: auto;
 }
 
 .preview.dragover {
   background: #1c2434;
+}
+
+.preview canvas,
+.preview .dropzone {
+  margin: auto;
 }
 
 .preview canvas {

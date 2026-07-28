@@ -45,4 +45,5 @@
 - 文件选择器（file chooser）弹出后 eval 会阻塞，需用 `playwright-cli upload <path>` 命令将文件填入已打开的 chooser。
 - `hidden` 属性（`display: none`）会被 CSS `.class { display: flex }` 覆盖，需显式声明 `.class[hidden] { display: none }`。这是真实兼容性坑——已在 `style.css` 修复。
 - **flex column 子项需 `min-height: 0`**：`.preview`（`flex:1`）默认 `min-height: auto` 不收缩，大图 canvas（即使设了 `max-height:100%`）会撑开预览区把 `.view-actions`（含下载按钮）推出视口底部不可见。已加 `min-height: 0` 修复。窄屏 media query 中 `.batch-area` 同理，`min-height: 45vh` 阻止 flex 收缩导致批量导出按钮被缩略图挤出视口，已改为 `min-height: 0`。
+- **flex 居中子项超高会向上溢出**：`.preview` 原用 `align-items:center` 居中 `.dropzone`，视口高度过窄（容器比 dropzone 矮）时居中把溢出均分到上下两侧，上半部分覆盖 header/tabs（批量 `.batch-area` 是块容器 + `overflow-y:auto`，无此问题）。修法：容器去掉 `align-items/justify-content:center`，给子项（canvas 与 dropzone）设 `margin:auto`（矮时居中、高时从顶部排布）+ 容器 `overflow-y:auto`——既保居中，又避免 flex 居中溢出时顶部内容滚不到的 bug。
 - 验证完成后清理：关闭浏览器（`close`）、停掉 HTTP 服务器进程、删除测试产物（测试图片、服务器脚本、`.playwright-cli/` 目录）。
