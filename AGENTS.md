@@ -27,7 +27,6 @@
 
 ## 环境约束（重要）
 
-- **绝不要用 Read 工具读取图片文件**（png/jpg 等），会导致进程异常中断。验证渲染效果一律用像素统计代替看图。
 - 全局 `playwright-cli` 命令在本机执行会报 `ChildProcess.kill` 错误，必须使用 `npx --no-install playwright-cli`。
 - `playwright-cli` 会拦截 `file://` 协议，验证前必须先起一个本地 HTTP 服务器（如 `npx --yes serve -l 8321 .`，或临时写个 node 静态服务器后台运行），然后访问 `http://127.0.0.1:8321/index.html`。
 - `npx --no-install playwright-cli open` 有时仍报 `ChildProcess.kill`，但浏览器可能已启动；用 `list` 确认状态，用 `close` / `kill-all` 清理僵尸会话后重试。
