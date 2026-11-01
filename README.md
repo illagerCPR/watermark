@@ -2,7 +2,7 @@
 
 纯前端的图片水印工具：把多行文本以平铺方式叠加到图片上，也可以把文本写入频域作为**肉眼不可见的盲水印**；支持批量处理。所有处理都在浏览器本地完成，图片不会上传到任何服务器。
 
-**在线使用：** <https://www.illageraris.dpdns.org/watermark/>
+**在线使用：** <https://www.illageraris.dpdns.org/watermark/> · **更新日志：** [CHANGELOG.md](CHANGELOG.md)
 
 ## 功能特性
 
