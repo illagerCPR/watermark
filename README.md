@@ -1,11 +1,18 @@
-# 图片水印工具
+# 图片水印工具（旧版 · 已废弃）
+
+> [!WARNING]
+> **本项目已重构，此分支（`old`）已废弃（deprecated），不再维护、不再更新。**
+>
+> - 本分支只用于归档重构前的旧版实现（零依赖静态文件：`index.html` + `style.css` + `script.js` + `blind.js`），仅作追溯用途。
+> - 当前版本已迁移至 Vite 工程，由 GitHub Actions 构建并部署到 GitHub Pages，源码见 [`main`](https://github.com/illagerCPR/watermark) 分支。
+> - 旧版仍可直接双击本分支的 `index.html` 离线运行；新版请访问 <https://www.illageraris.dpdns.org/watermark/>。
 
 一个纯前端的图片水印工具，可将多行文本以平铺方式叠加到图片上作为水印，并支持 DFT 频域盲水印与批量处理。零依赖、无需安装、无需联网，所有处理均在浏览器本地完成，图片不会上传到任何服务器。
 
-## 快速开始
+## 快速开始（仅限旧版归档）
 
-- 双击 `index.html` 即可在浏览器中打开使用，无需任何构建或安装步骤。
-- 通过 GitHub Pages 直接使用：https://illagercpr.github.io/watermark/
+- 双击本分支的 `index.html` 即可在浏览器中打开使用，无需任何构建或安装步骤。
+- 本分支不参与部署；`main` 分支的新版通过 GitHub Actions 发布：<https://www.illageraris.dpdns.org/watermark/>
 
 ## 功能特性
 
@@ -96,3 +103,10 @@ watermark/
 ## OpenCode对话链接
 
 https://opncd.ai/share/bmWufWw3
+
+## 归档信息
+
+- 归档分支：`old`（自 `main` 的 `aa34dea` 切出后冻结）
+- 归档日期：2026-11-01
+- 冻结范围内的版本标签：`v1.0.0`、`v1.0.0-final`、`v1.0.1-final`（轻量标签）
+- 重构方向：Vite + TypeScript 重写 UI，GitHub Actions 构建并部署 GitHub Pages；盲水印算法保持原样迁移
