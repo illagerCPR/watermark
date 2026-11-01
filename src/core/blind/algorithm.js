@@ -19,12 +19,26 @@
  *   角度在内容方向性干扰强时可能失败）、缩放约 0.7×–1.45×（插值损失大时受限）。
  *   小图（任一边 < 256）退化为整图 padding 单块模式，无几何鲁棒性。
  *
- * 说明：不使用 Web Worker（file:// 协议下浏览器禁止创建 Worker），
- *       FFT 按行/列分片让出事件循环（MessageChannel，避免 setTimeout
- *       深层嵌套被钳制到 4ms），配合进度回调避免页面假死。
+ * 说明：算法不依赖 DOM，既可在 Web Worker 中运行（生产路径，见 worker.ts），
+ *       也可在主线程回退运行；主线程路径用 MessageChannel 按行/列分片让出事件
+ *       循环（避免 setTimeout 深层嵌套被钳制到 4ms），配合进度回调避免页面假死。
+ *       本文件由旧版 blind.js 逐行迁移而来，除「模块导出 / 纯数据缓冲区 / 取消
+ *       检查」外算法未改动；tests/parity 下有与旧实现的逐像素对拍。
  */
-window.BlindWatermark = (function () {
+const BlindWatermark = (function () {
   'use strict';
+
+  // ---------- 取消支持 ----------
+  // signal：标准 AbortSignal。嵌入在逐行叠加时检查，提取在窗口循环间检查。
+  function createAbortError() {
+    var err = new Error('操作已取消');
+    err.name = 'AbortError';
+    return err;
+  }
+
+  function throwIfAborted(signal) {
+    if (signal && signal.aborted) throw createAbortError();
+  }
 
   // ---------- 常量（嵌入/提取两端必须一致） ----------
   var MAGIC = 0xA5;          // 帧头魔数
@@ -510,10 +524,8 @@ window.BlindWatermark = (function () {
     frame.set(rest, 3);
     if (crc8(frame, 1, 2 + len) !== frame[frame.length - 1]) return null;
     return new TextDecoder().decode(frame.slice(3, 3 + len));
-  }  // ---------- 公开 API：embed(imageData, text, strength, onProgress) → Promise<ImageData> ----------
-  // 瓦片架构：水印 = 256 周期 delta 瓦片（模板星座 + payload 幅度差分，空频谱生成），
-  // 平铺叠加到亮度通道。任意 256² 提取窗恰好包含一个周期（循环位移，幅度谱不变），
-  // 天然抗平移/裁剪；旋转/缩放由星座匹配校正。strength = 空间波纹 RMS（灰度级）。
+  }
+  // 内容自适应增益的输入：采样若干代表性 256² 窗口，取 payload 环带幅度谱中位数。
   function measurePayloadMed(data, w, h, done) {
     if (w < BLOCK || h < BLOCK) { done(0); return; } // 小图跳过自适应
     var starts = [[(w - BLOCK) >> 1, (h - BLOCK) >> 1]];
@@ -552,15 +564,17 @@ window.BlindWatermark = (function () {
     step();
   }
 
-  // ---------- 公开 API：embed(imageData, text, strength, onProgress) → Promise<ImageData> ----------
+  // ---------- 公开 API：embed(image, text, strength, onProgress, signal) → Promise<ImageBuffer> ----------
   // 瓦片架构：水印 = 256 周期 delta 瓦片（模板星座 + payload 幅度差分，空频谱生成），
   // 平铺叠加到亮度通道。任意 256² 提取窗恰好包含一个周期（循环位移，幅度谱不变），
   // 天然抗平移/裁剪；旋转/缩放由星座匹配校正。strength = 空间波纹 RMS 下限（灰度级）；
   // 对频域内容强的图，α 自动提升至 1.5×内容中位数以保证可提取（RMSE 相应增大）。
-  function embed(imageData, text, strength, onProgress) {
+  // 输入/输出均为纯数据缓冲 { width, height, data }，可在 Worker 与 Node 中使用。
+  function embed(imageData, text, strength, onProgress, signal) {
     return new Promise(function (resolve, reject) {
       var bits, frame;
       try {
+        throwIfAborted(signal);
         frame = encodeFrame(text);
         bits = bytesToBits(frame);
       } catch (err) {
@@ -572,51 +586,72 @@ window.BlindWatermark = (function () {
       var progress = function (p) { if (onProgress) onProgress(p); };
 
       measurePayloadMed(data, w, h, function (medC) {
-        var restRed = redundancyFor((frame.length - 3) * 8 + 8, BLOCK, BLOCK);
-        var N = BLOCK, n2 = N * N;
-        var re = new Float64Array(n2), im = new Float64Array(n2);
-        var pairs = 24 * RED_HEADER + (bits.length - 24) * restRed;
-        // Parseval：RMS = α·√(2·pairs + 8·3²) / N ⇒ 反解 α（模板幅度 3α，占 72）
-        var alpha = CAL * strength * n2 / Math.sqrt(2 * pairs + 72);
-        // 内容自适应增益：α 需盖过代表性窗口的 payload 带内容中位数
-        var alphaMin = 2.0 * medC;
-        if (alpha < alphaMin) alpha = alphaMin;
-        var rand = mulberry32(SEED ^ 0x9e3779b9);
-        embedTemplateTile(re, im, N, 3 * alpha, rand);
-        var gen = makePositionGen(N, N);
-        // 帧头 24bit 固定冗余，payload+CRC 自适应冗余；位置序列与提取端一致
-        embedPairsTile(re, im, gen, bits.slice(0, 24), alpha, RED_HEADER, rand);
-        embedPairsTile(re, im, gen, bits.slice(24), alpha, restRed, rand);
+        try {
+          throwIfAborted(signal);
+          var restRed = redundancyFor((frame.length - 3) * 8 + 8, BLOCK, BLOCK);
+          var N = BLOCK, n2 = N * N;
+          var re = new Float64Array(n2), im = new Float64Array(n2);
+          var pairs = 24 * RED_HEADER + (bits.length - 24) * restRed;
+          // Parseval：RMS = α·√(2·pairs + 8·3²) / N ⇒ 反解 α（模板幅度 3α，占 72）
+          var alpha = CAL * strength * n2 / Math.sqrt(2 * pairs + 72);
+          // 内容自适应增益：α 需盖过代表性窗口的 payload 带内容中位数
+          var alphaMin = 2.0 * medC;
+          if (alpha < alphaMin) alpha = alphaMin;
+          var rand = mulberry32(SEED ^ 0x9e3779b9);
+          embedTemplateTile(re, im, N, 3 * alpha, rand);
+          var gen = makePositionGen(N, N);
+          // 帧头 24bit 固定冗余，payload+CRC 自适应冗余；位置序列与提取端一致
+          embedPairsTile(re, im, gen, bits.slice(0, 24), alpha, RED_HEADER, rand);
+          embedPairsTile(re, im, gen, bits.slice(24), alpha, restRed, rand);
 
-        var d = { re: re, im: im, w: N, h: N };
-        fft2dAsync(d, true, function (p) { progress(p * 0.8); }, function () {
-          var tile = d.re;
-          var out = new ImageData(w, h);
-          var od = out.data;
-          for (var r = 0; r < h; r++) {
-            var tRow = (r % N) * N, rowBase = r * w;
-            for (var c = 0; c < w; c++) {
-              var delta = tile[tRow + (c % N)];
-              var i = (rowBase + c) * 4;
-              od[i] = clamp8(data[i] + delta);
-              od[i + 1] = clamp8(data[i + 1] + delta);
-              od[i + 2] = clamp8(data[i + 2] + delta);
-              od[i + 3] = data[i + 3];
+          var d = { re: re, im: im, w: N, h: N };
+          fft2dAsync(d, true, function (p) { progress(p * 0.8); }, function () {
+            try {
+              var tile = d.re;
+              var out = { width: w, height: h, data: new Uint8ClampedArray(w * h * 4) };
+              var od = out.data;
+              for (var r = 0; r < h; r++) {
+                if ((r & 255) === 0) throwIfAborted(signal); // 每 256 行检查一次取消
+                var tRow = (r % N) * N, rowBase = r * w;
+                for (var c = 0; c < w; c++) {
+                  var delta = tile[tRow + (c % N)];
+                  var i = (rowBase + c) * 4;
+                  od[i] = clamp8(data[i] + delta);
+                  od[i + 1] = clamp8(data[i + 1] + delta);
+                  od[i + 2] = clamp8(data[i + 2] + delta);
+                  od[i + 3] = data[i + 3];
+                }
+              }
+              progress(1);
+              resolve(out);
+            } catch (err) {
+              reject(err);
             }
-          }
-          progress(1);
-          resolve(out);
-        });
+          });
+        } catch (err) {
+          reject(err);
+        }
       });
     });
   }
 
-  // ---------- 公开 API：extract(imageData, onProgress) → Promise<string|null> ----------
-  // 提取顺序：分块网格（星座解码）→ 小图 padding 到 256 分块 → 整图 padding 单块兜底
-  function extract(imageData, onProgress) {
-    return new Promise(function (resolve) {
+  // ---------- 公开 API：extract(image, onProgress, signal) → Promise<string|null> ----------
+  // 提取顺序：分块网格（星座解码）→ 小图 padding 到 256 分块 → 整图 padding 单块兜底。
+  // signal 在窗口循环之间检查，取消后以 AbortError 拒绝。
+  function extract(imageData, onProgress, signal) {
+    return new Promise(function (resolve, reject) {
       var w = imageData.width, h = imageData.height;
       var progress = function (p) { if (onProgress) onProgress(p); };
+      var finished = false;
+      function abort() {
+        if (finished) return;
+        finished = true;
+        reject(createAbortError());
+      }
+      function checkAbort() {
+        if (signal && signal.aborted) { abort(); return true; }
+        return false;
+      }
 
       // 对给定 RGBA 数据按分块网格提取。两级网格：先 B/2 粗网格，无结果再 B/4 偏移
       // 加密级（窗口错开半格，内容不同带来新机会）。跨级共享计数。
@@ -631,7 +666,7 @@ window.BlindWatermark = (function () {
           if (starts.length === 0) starts.push(0);
           return starts;
         }
-        function runLevel(offset, cb) {
+        function runLevel(offset, cb, progressBase, progressSpan) {
           var xs = startsWithOffset(W, BLOCK, offset), ys = startsWithOffset(H, BLOCK, offset);
           var blocks = [];
           for (var iy = 0; iy < ys.length; iy++) {
@@ -639,11 +674,15 @@ window.BlindWatermark = (function () {
           }
           var bi = 0;
           function nextBlock() {
+            if (finished) return;
+            if (checkAbort()) return;
             if (bi >= blocks.length) { cb(null); return; }
             var bk = blocks[bi++];
             var blk = lumaBlock(data, W, bk.x, bk.y, BLOCK);
             var d = { re: blk, im: new Float64Array(BLOCK * BLOCK), w: BLOCK, h: BLOCK };
             fft2dAsync(d, false, null, function () {
+              if (finished) return;
+              if (checkAbort()) return;
               var mag = new Float64Array(BLOCK * BLOCK);
               for (var i = 0; i < BLOCK * BLOCK; i++) {
                 mag[i] = Math.sqrt(d.re[i] * d.re[i] + d.im[i] * d.im[i]);
@@ -651,24 +690,33 @@ window.BlindWatermark = (function () {
               // 常规路径（findConstellation 候选），失败再走旋转/缩放纯频域校正路径
               var text = decodeBlock(d.re, d.im, mag, BLOCK);
               if (text === null) text = decodeBlockRot(mag, BLOCK);
+              if (checkAbort()) return;
               if (text !== null) {
                 found[text] = (found[text] || 0) + 1;
                 if (found[text] >= 2) { cb(text); return; } // 两块一致即采信
               }
-              progress(Math.min(bi / blocks.length * 0.95, 0.95));
+              progress(progressBase + Math.min(bi / blocks.length, 1) * progressSpan);
               yieldTask(nextBlock);
             });
           }
           yieldTask(nextBlock);
         }
+        // 进度按两级网格分段：粗网格 0–50%，细网格 50–95%，避免进度回跳。
         runLevel(0, function (res) {
+          if (finished) return;
           if (res !== null) { done(res); return; }
-          runLevel(BLOCK >> 2, function (res2) { done(res2); });
-        });
+          runLevel(BLOCK >> 2, function (res2) {
+            if (finished) return;
+            done(res2);
+          }, 0.5, 0.45);
+        }, 0, 0.5);
       }
 
+      if (checkAbort()) return;
       if (w >= BLOCK && h >= BLOCK) {
         tryGrid(imageData.data, w, h, function (text) {
+          if (finished) return;
+          finished = true;
           progress(1);
           resolve(text);
         });
@@ -688,6 +736,8 @@ window.BlindWatermark = (function () {
           }
         }
         tryGrid(padded, w2, h2, function (text) {
+          if (finished) return;
+          finished = true;
           progress(1);
           resolve(text);
         });
@@ -698,17 +748,11 @@ window.BlindWatermark = (function () {
   return {
     embed: embed,
     extract: extract,
-    MAX_PAYLOAD: MAX_PAYLOAD,
-    _debug: {
-      fft2dAsync: fft2dAsync,
-      lumaBlock: lumaBlock,
-      estimateRotation: estimateRotation,
-      findConstellation: findConstellation,
-      decodeBlock: decodeBlock,
-      tryDecode: tryDecode,
-      makePositionGen: makePositionGen,
-      sampleMag: sampleMag,
-      redundancyFor: redundancyFor
-    }
+    MAX_PAYLOAD: MAX_PAYLOAD
   };
 })();
+
+export const embed = BlindWatermark.embed;
+export const extract = BlindWatermark.extract;
+export const MAX_PAYLOAD = BlindWatermark.MAX_PAYLOAD;
+

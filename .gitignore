@@ -1,0 +1,23 @@
+# 依赖与构建产物
+node_modules/
+dist/
+*.local
+.eslintcache
+.vite/
+
+# 测试与工具产物
+test-results/
+playwright-report/
+blob-report/
+.playwright-cli/
+coverage/
+
+# 编辑器与系统文件
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# DSH 本地记忆库（不随仓库分发）
+.dsh-meow/
