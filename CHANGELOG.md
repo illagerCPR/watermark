@@ -2,7 +2,7 @@
 
 本文件记录面向使用者的版本变更；开发与部署细节见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) 与 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
-## 未发布
+## v2.1.0 — 2026-11-01
 
 ### 新增
 
