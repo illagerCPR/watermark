@@ -30,14 +30,15 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: `pnpm dev --port ${DEV_PORT} --strictPort`,
+      // 显式绑定 IPv4：CI 上 localhost 可能只解析到 ::1，导致 Playwright 轮询 127.0.0.1 超时。
+      command: `pnpm dev --host 127.0.0.1 --port ${DEV_PORT} --strictPort`,
       url: devURL,
       reuseExistingServer: !isCI,
       timeout: 120_000,
     },
     {
       // 构建产物才是线上真正跑的东西，先构建再预览。
-      command: `pnpm build && pnpm preview --port ${PREVIEW_PORT} --strictPort`,
+      command: `pnpm build && pnpm preview --host 127.0.0.1 --port ${PREVIEW_PORT} --strictPort`,
       url: previewURL,
       reuseExistingServer: !isCI,
       timeout: 180_000,
