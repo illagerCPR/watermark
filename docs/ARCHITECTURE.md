@@ -11,7 +11,7 @@
 | 样式 | Tailwind CSS v4 | 颜色令牌映射到运行时 CSS 变量，`<html data-theme>` 切换主题 |
 | 盲水印 | 原生 JS（逐行迁移自旧版 `blind.js`） | 以 `.js` + `.d.ts` 的形式保留算法原貌，供 Worker 复用 |
 | 打包 | fflate | 批量导出 ZIP，store 模式（图片已压缩，不再二次压缩） |
-| 测试 | Vitest（单元）+ Playwright（E2E / 对拍） | E2E 跑在 Vite 开发服务器上 |
+| 测试 | Vitest（单元）+ Playwright（E2E / 对拍） | E2E 双目标：dev server + 生产构建（`vite preview`，base=/watermark/） |
 
 ## 目录结构
 
@@ -99,4 +99,5 @@ tests/
 - **单元**：盲水印往返/负样本/取消/长度限制、参数清洗、文件名与 ZIP 去重。
 - **对拍**：`tests/e2e/parity.spec.ts` 加载 `tests/parity/fixtures/legacy-blind.js`，对比同一输入的嵌入结果哈希，并做双向交叉提取。
 - **E2E**：单图导出尺寸与命名、参数重绘、JPEG 质量行回归、盲水印闭环、尺寸拦截、批量 ZIP、跳过小图、未检测到、主题与参数持久化。
-- **手工**：桌面 1440×900、移动 420×860、深浅两套主题截图走查；上线后用 `vite preview` 在 `/watermark/` 路径下复测一遍 Worker 路径。
+- **构建冒烟**：`tests/e2e/preview.spec.ts` 在 `vite build` 产物（base=/watermark/）上验证资源、导出与 Worker 全链路，并断言无 4xx 与控制台报错。
+- **手工**：桌面 1440×900、移动 420×860、深浅两套主题截图走查。

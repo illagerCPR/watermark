@@ -1,24 +1,12 @@
 import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 
 import { expect, test, type Page } from '@playwright/test'
 import { unzipSync } from 'fflate'
 
+import { fixture, saveDownload } from './support'
+
 const SINGLE = 'section[aria-label="单图模式"]'
 const BATCH = 'section[aria-label="批量模式"]'
-
-const fixture = (name: string): string =>
-  fileURLToPath(new URL(`../fixtures/${name}`, import.meta.url))
-
-async function saveDownload(
-  page: Page,
-  trigger: () => Promise<unknown>,
-): Promise<{ path: string; name: string }> {
-  const [download] = await Promise.all([page.waitForEvent('download'), trigger()])
-  const path = test.info().outputPath(download.suggestedFilename())
-  await download.saveAs(path)
-  return { path, name: download.suggestedFilename() }
-}
 
 function readPngSize(buffer: Buffer): { width: number; height: number } {
   expect(buffer.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a')

@@ -1,11 +1,17 @@
 import { defineConfig, devices } from '@playwright/test'
 
-const PORT = 5173
-const baseURL = `http://127.0.0.1:${PORT}`
+const DEV_PORT = 5173
+const PREVIEW_PORT = 4173
+const devURL = `http://127.0.0.1:${DEV_PORT}`
+const previewURL = `http://127.0.0.1:${PREVIEW_PORT}/watermark/`
+
+const isCI = Boolean(process.env.CI)
 
 /**
- * E2E 直接跑在 Vite 开发服务器上：Worker、动态导入等行为与生产一致，
- * 且无需每次构建。视觉/构建验证用 `pnpm build && pnpm preview` 手动走查。
+ * E2E 跑两个目标：
+ * - dev：Vite 开发服务器（根路径），覆盖交互与算法闭环；
+ * - preview：`vite build` 产物（base=/watermark/），专治子路径资源/Worker 回归。
+ * CI 使用 Playwright 固定版本 chromium；本地默认系统 Chrome，免去额外下载。
  */
 export default defineConfig({
   testDir: './tests/e2e',
@@ -13,26 +19,40 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   fullyParallel: false,
   workers: 1,
-  retries: 0,
-  reporter: [['list']],
+  retries: isCI ? 1 : 0,
+  reporter: isCI ? [['list'], ['html', { open: 'never' }]] : [['list']],
   use: {
-    baseURL,
-    channel: 'chrome',
+    channel: isCI ? undefined : 'chrome',
     acceptDownloads: true,
-    trace: 'off',
-    screenshot: 'off',
+    trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
     video: 'off',
   },
-  webServer: {
-    command: `pnpm dev --port ${PORT} --strictPort`,
-    url: baseURL,
-    reuseExistingServer: true,
-    timeout: 120_000,
-  },
+  webServer: [
+    {
+      command: `pnpm dev --port ${DEV_PORT} --strictPort`,
+      url: devURL,
+      reuseExistingServer: !isCI,
+      timeout: 120_000,
+    },
+    {
+      // 构建产物才是线上真正跑的东西，先构建再预览。
+      command: `pnpm build && pnpm preview --port ${PREVIEW_PORT} --strictPort`,
+      url: previewURL,
+      reuseExistingServer: !isCI,
+      timeout: 180_000,
+    },
+  ],
   projects: [
     {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      name: 'dev',
+      testIgnore: /preview\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'], baseURL: devURL },
+    },
+    {
+      name: 'preview',
+      testMatch: /preview\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'], baseURL: previewURL },
     },
   ],
 })
