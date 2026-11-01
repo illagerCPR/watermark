@@ -92,7 +92,3 @@ watermark/
 ## 浏览器兼容性
 
 支持所有现代浏览器（Chrome、Edge、Firefox、Safari 最新版本）。字体选项中的中文字体（微软雅黑、宋体等）依赖操作系统已安装的字体。
-
-## OpenCode对话链接
-
-https://opncd.ai/share/bmWufWw3
