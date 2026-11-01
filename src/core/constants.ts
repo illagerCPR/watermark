@@ -42,3 +42,9 @@ export const LIMITS = {
 } as const satisfies Record<string, NumberLimit>
 
 export type LimitKey = keyof typeof LIMITS
+
+/**
+ * 不支持流式落盘（File System Access API）时，ZIP 只能先在内存里攒完再下载。
+ * 输入总大小超过该阈值时提示用户分批导出，避免一次性占满内存。
+ */
+export const MEMORY_ZIP_WARN_BYTES = 200 * 1024 * 1024

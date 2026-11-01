@@ -21,9 +21,9 @@ pnpm test:e2e       # Playwright E2E + 新旧对拍（自动起 dev server 与 p
 
 ## 测试说明
 
-- **单元测试**（`tests/unit`）：盲水印往返、负样本、取消、长度限制；参数清洗；导出文件名与 ZIP 去重。
+- **单元测试**（`tests/unit`）：盲水印往返、负样本、取消、长度限制；参数清洗；导出文件名与 ZIP 去重；ZIP 写入器的串行写入、abort 与 sink 故障。
 - **对拍测试**（`tests/e2e/parity.spec.ts`）：把 `tests/parity/fixtures/legacy-blind.js` 注入页面，验证新旧实现的嵌入结果逐字节相同，并且可以双向交叉提取。算法一旦有意修改，需要同步更新基线（见 `tests/parity/README.md`）。
-- **E2E**（`tests/e2e/app.spec.ts`）：单图导出、参数重绘、JPEG 质量行回归、盲水印闭环、尺寸拦截、批量 ZIP、跳过小图、未检测到、主题与参数持久化。
+- **E2E**（`tests/e2e/app.spec.ts`）：单图导出、参数重绘、JPEG 质量行回归、盲水印闭环、尺寸拦截、批量 ZIP（流式写入、内存回退、保存对话框取消）、跳过小图、未检测到、主题与参数持久化。
 - **构建冒烟**（`tests/e2e/preview.spec.ts`）：在生产构建（base=/watermark/）上断言资源、导出与 Worker 全链路可用，且没有 4xx 请求与控制台报错——dev server 走根路径，发现不了子路径问题。
 
 手工验收建议：
@@ -72,4 +72,5 @@ gh api -X PUT repos/illagerCPR/watermark/pages -f build_type=workflow
 - **盲水印任务一直不完成**：检查浏览器控制台是否报 Worker 创建失败；失败时 `client.ts` 会回退主线程，仍可用但会占用 UI 线程。
 - **提取很慢**：未嵌入水印的图片需要扫描全部窗口，属预期行为，可用取消按钮中断。
 - **字体看起来不对**：字体选项按名称引用系统字体，Linux/Android 上没有雅黑等字体会回退，属正常现象。
+- **批量导出没有弹出保存对话框**：只有支持 File System Access API 的 Chromium 浏览器（且运行在 https 或 localhost）才会询问保存位置；其余情况自动回退为内存打包下载。
 - **E2E 启动失败**：`webServer` 会复用 5173（dev）与 4173（preview）端口，本地已有服务时直接复用；端口被其他程序占用就改 `playwright.config.ts` 里的 `DEV_PORT` / `PREVIEW_PORT`。CI 不复用，端口占用会直接报错。

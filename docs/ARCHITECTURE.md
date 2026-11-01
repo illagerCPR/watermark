@@ -10,7 +10,7 @@
 | UI | Vue 3.5 + TypeScript 5.9 | 组合式 API，无路由 / 无状态库 |
 | 样式 | Tailwind CSS v4 | 颜色令牌映射到运行时 CSS 变量，`<html data-theme>` 切换主题 |
 | 盲水印 | 原生 JS（逐行迁移自旧版 `blind.js`） | 以 `.js` + `.d.ts` 的形式保留算法原貌，供 Worker 复用 |
-| 打包 | fflate | 批量导出 ZIP，store 模式（图片已压缩，不再二次压缩） |
+| 打包 | fflate | 批量导出 ZIP：Chrome/Edge 边处理边写盘，其他浏览器内存打包后下载 |
 | 测试 | Vitest（单元）+ Playwright（E2E / 对拍） | E2E 双目标：dev server + 生产构建（`vite preview`，base=/watermark/） |
 
 ## 目录结构
@@ -67,6 +67,14 @@ tests/
 4. 关闭平铺或文本为空时只导出原图。
 
 `hidden` 属性在旧版被 `.group.row { display: flex }` 覆盖导致「PNG 模式下仍显示 JPEG 质量」。新版用 `v-if` 控制条件渲染，E2E 中有对应回归测试。
+
+## 批量导出与 ZIP 流式落盘
+
+- `core/zip.ts` 用 `ZipWriter` + `ZipSink` 把 fflate 的同步回调接成 Promise 队列：每写完一个条目 await 一次形成反压，内存里最多只有当前图片的字节，不再需要先攒齐所有图片。
+- 两种 sink：`createFileSink` 经 File System Access API 直接写入用户选定的文件（Chrome/Edge），`createMemorySink` 攒成 Blob 后触发下载（Firefox/Safari 回退）。
+- 保存对话框必须在点击事件的同步调用栈里发起（用户手势），因此 `BatchView` 先选保存位置、再开始渲染；用户取消对话框按取消导出处理，`writable.abort()` 丢弃半成品。
+- 写盘失败（磁盘满、权限被收回）视为整批故障：立即中止并提示，不逐张继续。
+- ZIP 条目名经 `uniqueEntryName` 去重，条目仍是 store 模式（图片已压缩，不再二次压缩）。
 
 ## 盲水印算法（v2 瓦片架构）
 

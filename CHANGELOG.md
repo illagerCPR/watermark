@@ -2,6 +2,17 @@
 
 本文件记录面向使用者的版本变更；开发与部署细节见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) 与 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
+## 未发布
+
+### 新增
+
+- 批量导出 ZIP 支持边处理边写入：Chrome / Edge 选择保存位置后直接落盘，大批量导出不再把所有图片堆在内存里
+- 导出中途取消会丢弃半成品文件，不会留下损坏的 ZIP
+
+### 变更
+
+- 批量导出 ZIP 时，Chromium 系浏览器会先询问保存位置；Firefox / Safari 自动回退为内存打包后下载
+
 ## v2.0.0 — 2026-11-01
 
 界面全面重写，功能与原版等价，盲水印算法未做任何改动。

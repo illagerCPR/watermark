@@ -3,7 +3,13 @@ import { readFileSync } from 'node:fs'
 import { expect, test, type Page } from '@playwright/test'
 import { unzipSync } from 'fflate'
 
-import { fixture, saveDownload } from './support'
+import {
+  cancelFileSystemAccess,
+  disableFileSystemAccess,
+  fixture,
+  saveDownload,
+  stubFileSystemAccess,
+} from './support'
 
 const SINGLE = 'section[aria-label="单图模式"]'
 const BATCH = 'section[aria-label="批量模式"]'
@@ -97,7 +103,9 @@ test.describe('单图模式', () => {
 })
 
 test.describe('批量模式', () => {
-  test('ZIP 导出包含全部图片', async ({ page }) => {
+  test('ZIP 导出包含全部图片（流式写入所选文件）', async ({ page }) => {
+    // Chrome 会弹出原生保存对话框，改用把字节收集起来再触发下载的假句柄。
+    await stubFileSystemAccess(page)
     await page.goto('/')
     await page.getByRole('tab', { name: '批量' }).click()
     await page.setInputFiles(`${BATCH} input[type=file]`, [
@@ -119,6 +127,7 @@ test.describe('批量模式', () => {
   })
 
   test('盲水印开启时跳过小图并在 ZIP 中排除', async ({ page }) => {
+    await stubFileSystemAccess(page)
     await page.goto('/')
     await page.getByRole('switch', { name: '嵌入盲水印' }).click()
     await page.getByPlaceholder('如：版权归属-张三').fill('batch-blind')
@@ -138,6 +147,49 @@ test.describe('批量模式', () => {
     const entries = unzipSync(new Uint8Array(readFileSync(path)))
     expect(Object.keys(entries)).toEqual(['photo_watermark.png'])
     expect(entries['photo_watermark.png']?.byteLength ?? 0).toBeGreaterThan(1000)
+  })
+
+  test('不支持流式保存时回退为内存打包下载', async ({ page }) => {
+    await disableFileSystemAccess(page)
+    await page.goto('/')
+    await page.getByRole('tab', { name: '批量' }).click()
+    await page.setInputFiles(`${BATCH} input[type=file]`, [
+      fixture('photo.jpg'),
+      fixture('photo2.jpg'),
+    ])
+    await expect(page.locator(`${BATCH} canvas`)).toHaveCount(2)
+
+    const { path, name } = await saveDownload(page, () =>
+      page.locator(`${BATCH} footer button.btn-primary`).click(),
+    )
+    expect(name).toMatch(/^watermarks_\d{8}-\d{6}\.zip$/)
+
+    const entries = unzipSync(new Uint8Array(readFileSync(path)))
+    expect(Object.keys(entries).sort()).toEqual([
+      'photo2_watermark.png',
+      'photo_watermark.png',
+    ])
+  })
+
+  test('取消保存对话框后不导出也不报错', async ({ page }) => {
+    await cancelFileSystemAccess(page)
+    await page.goto('/')
+    await page.getByRole('tab', { name: '批量' }).click()
+    await page.setInputFiles(`${BATCH} input[type=file]`, [
+      fixture('photo.jpg'),
+      fixture('photo2.jpg'),
+    ])
+    await expect(page.locator(`${BATCH} canvas`)).toHaveCount(2)
+
+    let downloaded = false
+    page.on('download', () => {
+      downloaded = true
+    })
+
+    await page.locator(`${BATCH} footer button.btn-primary`).click()
+    await expect(page.getByText('已取消批量导出')).toBeVisible()
+    await page.waitForTimeout(400)
+    expect(downloaded).toBe(false)
   })
 })
 

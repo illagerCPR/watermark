@@ -4,7 +4,8 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import ThumbCard from '@/components/views/ThumbCard.vue'
 import { embedBlind } from '@/core/blind/client'
-import { BLIND_MAX_BYTES, BLIND_MIN_SIZE } from '@/core/constants'
+import { BLIND_MAX_BYTES, BLIND_MIN_SIZE, MEMORY_ZIP_WARN_BYTES } from '@/core/constants'
+import { isStreamingSaveSupported, pickZipFile } from '@/core/file-save'
 import {
   createCanvas,
   formatBytes,
@@ -21,13 +22,13 @@ import {
 import { renderWatermark } from '@/core/render/watermark'
 import type { BatchItem } from '@/core/types'
 import { errorMessage, isAbortError, timestampForFileName } from '@/core/utils'
-import { createZip, type ZipEntry } from '@/core/zip'
+import { createFileSink, createMemorySink, ZipWriter } from '@/core/zip'
 import { appBusy, beginAppTask } from '@/composables/useAppLock'
 import { useParams } from '@/composables/useParams'
 import { pushToast } from '@/composables/useToasts'
 
 type ExportResult = 'done' | 'skipped' | 'failed'
-type ExportPhase = 'idle' | 'render' | 'zip'
+type ExportPhase = 'idle' | 'render' | 'finalize'
 
 const { params } = useParams()
 
@@ -41,6 +42,7 @@ const progress = ref(0)
 const currentIndex = ref(0)
 const currentProgress = ref(0)
 const dragging = ref(false)
+const zipStreaming = ref(false)
 
 const fileInputRef = ref<HTMLInputElement | null>(null)
 let abortController: AbortController | null = null
@@ -49,18 +51,19 @@ let dragDepth = 0
 
 const totalSize = computed(() => items.value.reduce((sum, item) => sum + item.size, 0))
 const overallPercent = computed(() => {
-  if (phase.value === 'zip') return Math.round(progress.value * 100)
+  if (phase.value === 'finalize') return 100
   if (!busy.value) return 0
   const total = items.value.length || 1
   return Math.min(100, Math.round(((Math.max(0, currentIndex.value - 1) + currentProgress.value) / total) * 100))
 })
 
 const statusText = computed(() => {
-  if (phase.value === 'zip') return '正在打包 ZIP…'
+  if (phase.value === 'finalize') return '正在生成 ZIP…'
   if (busy.value) {
     const embedding = params.blindEnabled && params.blindText.trim().length > 0
-    const suffix = embedding ? ` · 嵌入 ${Math.round(currentProgress.value * 100)}%` : ''
-    return `正在处理 ${currentIndex.value}/${items.value.length}${suffix}`
+    const embedSuffix = embedding ? ` · 嵌入 ${Math.round(currentProgress.value * 100)}%` : ''
+    const zipSuffix = zipStreaming.value ? ' · 写入 ZIP' : ''
+    return `正在处理 ${currentIndex.value}/${items.value.length}${embedSuffix}${zipSuffix}`
   }
   if (!items.value.length) return '还没有添加图片'
   return `${items.value.length} 张待处理`
@@ -166,8 +169,47 @@ async function exportAll(): Promise<void> {
     return
   }
 
+  const total = items.value.length
+  const zipMode = zipEnabled.value && total > 1
+  const zipName = `watermarks_${timestampForFileName()}.zip`
+
+  // 保存对话框必须在用户手势的同步调用栈里发起，因此放在任何 await 之前。
+  let zipWriter: ZipWriter | null = null
+  let memoryZip: ReturnType<typeof createMemorySink> | null = null
+
+  if (zipMode) {
+    let handle: FileSystemFileHandle | null = null
+
+    if (isStreamingSaveSupported()) {
+      const picked = await pickZipFile(zipName)
+      if (picked.status === 'cancelled') {
+        pushToast('已取消批量导出', 'info')
+        return
+      }
+      if (picked.status === 'picked') {
+        handle = picked.handle
+      } else if (picked.status === 'failed') {
+        pushToast(`无法写入所选位置，改为内存打包：${errorMessage(picked.error)}`, 'info')
+      }
+    }
+
+    if (handle) {
+      zipWriter = new ZipWriter(createFileSink(handle))
+    } else {
+      // 不支持流式落盘：仍然边处理边攒，只是最后统一下载。
+      memoryZip = createMemorySink()
+      zipWriter = new ZipWriter(memoryZip.sink)
+      if (totalSize.value > MEMORY_ZIP_WARN_BYTES) {
+        pushToast('浏览器不支持流式保存，图片较多时建议分批导出，避免占用过多内存', 'info')
+      }
+    }
+  }
+
+  const streaming = zipWriter !== null && memoryZip === null
+
   busy.value = true
   phase.value = 'render'
+  zipStreaming.value = streaming
   results.value = {}
   progress.value = 0
   currentIndex.value = 0
@@ -177,14 +219,12 @@ async function exportAll(): Promise<void> {
   abortController = controller
   const releaseTask = beginAppTask()
 
-  const total = items.value.length
-  const zipMode = zipEnabled.value && total > 1
   const { canvas, context } = createCanvas(1, 1, { willReadFrequently: true })
-  const entries: ZipEntry[] = []
   const usedNames = new Set<string>()
   const skipped: string[] = []
   const failed: string[] = []
   let done = 0
+  let written = 0
   let cancelled = false
 
   try {
@@ -199,9 +239,11 @@ async function exportAll(): Promise<void> {
       currentIndex.value = index + 1
       currentProgress.value = 0
 
+      let format = params.format
+      let blob: Blob | null = null
+
       try {
         renderWatermark(context, item, params)
-        let format = params.format
 
         if (useBlind) {
           if (item.width < BLIND_MIN_SIZE || item.height < BLIND_MIN_SIZE) {
@@ -233,19 +275,7 @@ async function exportAll(): Promise<void> {
           )
         }
 
-        const blob = await canvasToBlob(canvas, format, params.quality)
-
-        if (zipMode) {
-          entries.push({
-            name: uniqueEntryName(exportFileName(item.name, format), usedNames),
-            data: new Uint8Array(await blob.arrayBuffer()),
-          })
-        } else {
-          downloadBlob(blob, exportFileName(item.name, format))
-        }
-
-        results.value[item.id] = 'done'
-        done += 1
+        blob = await canvasToBlob(canvas, format, params.quality)
       } catch (error) {
         if (isAbortError(error)) {
           cancelled = true
@@ -254,32 +284,42 @@ async function exportAll(): Promise<void> {
         failed.push(item.name)
         results.value[item.id] = 'failed'
         console.error('批量处理失败：', item.name, error)
+        continue
       }
 
+      if (!blob) continue
+
+      if (zipWriter) {
+        // 写盘失败（磁盘满、权限被收回）属于整体故障，直接中止整批。
+        const entryName = uniqueEntryName(exportFileName(item.name, format), usedNames)
+        await zipWriter.add(entryName, new Uint8Array(await blob.arrayBuffer()))
+        written += 1
+      } else {
+        downloadBlob(blob, exportFileName(item.name, format))
+      }
+
+      results.value[item.id] = 'done'
+      done += 1
       currentProgress.value = 0
       progress.value = (index + 1) / total
     }
 
     if (cancelled) {
+      await zipWriter?.abort()
       pushToast('已取消批量导出', 'info')
       return
     }
 
-    if (zipMode) {
-      if (entries.length === 0) {
+    if (zipWriter) {
+      if (written === 0) {
+        await zipWriter.abort()
         pushToast('没有可导出的图片', 'error')
         return
       }
-      phase.value = 'zip'
-      progress.value = 0
-      const zipBlob = await createZip(
-        entries,
-        (zipDone, zipTotal) => {
-          progress.value = zipTotal > 0 ? zipDone / zipTotal : 0
-        },
-        () => controller.signal.aborted,
-      )
-      downloadBlob(zipBlob, `watermarks_${timestampForFileName()}.zip`)
+      // 内存回退路径要等中央目录与 Blob 生成；直接写盘时这一步几乎瞬时。
+      phase.value = 'finalize'
+      await zipWriter.finish()
+      if (memoryZip) downloadBlob(memoryZip.toBlob(), zipName)
     }
 
     const summary = [`批量完成：${done}/${total} 张成功`]
@@ -287,11 +327,13 @@ async function exportAll(): Promise<void> {
     if (failed.length > 0) summary.push(`${failed.length} 张失败`)
     pushToast(summary.join('，'), failed.length > 0 || skipped.length > 0 ? 'info' : 'success')
   } catch (error) {
+    await zipWriter?.abort(error)
     if (isAbortError(error)) pushToast('已取消批量导出', 'info')
     else pushToast(errorMessage(error), 'error')
   } finally {
     busy.value = false
     phase.value = 'idle'
+    zipStreaming.value = false
     progress.value = 0
     currentIndex.value = 0
     currentProgress.value = 0
